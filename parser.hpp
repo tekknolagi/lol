@@ -8,108 +8,122 @@
 
 #include <stdio.h>
 
-template<typename T>
-void append(std::vector<T> &dst, const std::vector<T> &src) {
-    dst.insert(dst.end(), src.begin(), src.end());
-}
+using std::string;
+using std::vector;
+using std::ostream;
+using std::cout;
 
-struct ParseResult {
-    std::vector<std::string> result;
-    bool success;
-
-    ParseResult() {
-        this->success = true;
-    }
-
-    ParseResult(char result) {
-        this->result.push_back("");
-        this->result[0] += result;
-        this->success = true;
-    }
-
-    ParseResult(const std::string &result) {
-        this->result.push_back(result);
-        this->success = true;
-    }
-    
-    ParseResult(const ParseResult &result0, const ParseResult &result1) {
-        append(this->result, result0.result);
-        append(this->result, result1.result);
-        this->success = true;
-    }
-
-    ParseResult(bool success) {
-        this->success = success;
-    }
-
-    size_t result_length() const {
-        return this->result.size();
-    }
+class ParseResult {
+public:
+    ParseResult() : success(true) {}
+    ParseResult(bool success) : success(success) {}
 
     explicit operator bool() const {
         return success;
     }
 
-    std::string string() const {
-        std::string res;
-        for (const auto &token : result) {
-            res += token;
-        }
-        return res;
+    bool succeeded() const {
+        return success;
     }
 
-    ParseResult operator+(const ParseResult &other) const {
-        if (success == false || other.success == false) {
-            return failure;
-        }
+protected:
+    virtual ostream &print(ostream& output) const = 0;
 
-        return ParseResult(*this, other);
+private:
+    bool success = true;
+};
+
+class ParseFailure : public ParseResult {
+public:
+    ParseFailure() : ParseResult(false) {}
+
+    friend ostream &operator<<(ostream &output, const ParseFailure &result) {
+        return result.print(output);
     }
-    
-    void operator+=(const ParseResult &other) {
-        if (success == false || other.success == false) {
-            success = false;
-        }
 
-        append(result, other.result);
+protected:
+    ostream &print(ostream& output) const {
+        output << "<ParseFailure>";
+        return output;
+    }
+};
+
+ParseFailure *failure = new ParseFailure();
+
+template<typename T>
+class Result : public ParseResult {
+public:
+    Result(T t) : result(t) {}
+
+    friend ostream &operator<<(ostream &output, const Result<T> &result) {
+        return result.print(output);
     }
 
-    friend std::ostream &operator<<(std::ostream &output,
-                                    const ParseResult &result) {
+protected:
+    ostream& print(ostream& output) const {
+        output << result;
+        return output;
+    }
+
+private:
+    T result;
+};
+
+class ListResult : public ParseResult {
+public:
+    ListResult() {}
+    ListResult(std::initializer_list<ParseResult *> ls) : result(ls) {}
+
+    void push_back(ParseResult *pr) {
+        result.push_back(pr);
+    }
+
+    size_t size() const {
+        return result.size();
+    }
+
+    friend ostream &operator<<(ostream &output, const ListResult &result) {
+       return result.print(output);
+    }
+
+protected:
+    ostream& print(ostream& output) const {
         output << "[";
-        for (size_t i = 0; i < result.result.size(); i++) {
+        for (size_t i = 0; i < result.size(); i++) {
             if (i > 0) {
                 output << ", ";
             }
-            output << result.result[i];
+            output << *result[i];
         }
         output << "]";
         return output;
     }
 
-    const static ParseResult failure;
+private:
+    std::vector<ParseResult *> result;
 };
 
-const ParseResult ParseResult::failure = ParseResult(false);
+typedef Result<char> CharResult;
+typedef Result<string> StringResult;
 
-typedef std::function<ParseResult (FILE *)> Parser;
+typedef std::function<ParseResult *(FILE *)> Parser;
 
 /* Parser functions. */
 
 Parser p_empty() {
-    return [](FILE *input) {
-        return ParseResult();
+    return [](FILE *input) -> ParseResult * {
+        return new StringResult("");
     };
 }
 
 Parser p_any() {
-    return [](FILE *input) {
+    return [](FILE *input) -> ParseResult * {
         int result = fgetc(input);
         if (result == EOF) {
-            return ParseResult::failure;
+            return failure;
         }
         else {
-            return ParseResult((char)result);
+            return new CharResult((char)result);
         }
     };
 }
@@ -121,63 +135,63 @@ int fpeek(FILE *input) {
 }
 
 Parser p_lit(char c) {
-    return [c](FILE *input) {
+    return [c](FILE *input) -> ParseResult * {
         int result = fpeek(input);
         if (result == c) {
             fgetc(input);
-            return ParseResult(c);
+            return new CharResult((char)c);
         }
         else {
-            return ParseResult::failure;
+            return failure;
         }
     };
 }
 
-Parser p_lit(const std::string &s) {
-    return [s](FILE *input) {
-        std::string acc;
+Parser p_lit(const string &s) {
+    return [s](FILE *input) -> ParseResult * {
+        string acc;
         for (size_t i = 0; i < s.length(); i++) {
             int c = fpeek(input);
-            if (c != s[i]) { return ParseResult::failure; }
+            if (c != s[i]) { return failure; }
             fgetc(input);
             acc += c;
         }
 
-        return ParseResult(acc);
+        return new StringResult(acc);
     };
 }
 
 /* Works for both char and string. */
-template<typename T>
+/*template<typename T>
 Parser p_chomp(const T &t) {
     return [t](FILE *input) {
         ParseResult result = p_lit(t);
-        if (!result) { return ParseResult::failure; }
-        return ParseResult();
+        if (!result) { return failure; }
+        return new T();
     };
-}
+}*/
 
 Parser p_or(const Parser &parser0, const Parser &parser1) {
-    return [parser0, parser1](FILE *input) {
-        ParseResult result0 = parser0(input);
-        if (result0) { return result0; }
-        ParseResult result1 = parser1(input);
-        if (result1) { return result1; }
-        return ParseResult::failure;
+    return [parser0, parser1](FILE *input) -> ParseResult * {
+        ParseResult *result0 = parser0(input);
+        if (*result0) { return result0; }
+        ParseResult *result1 = parser1(input);
+        if (*result1) { return result1; }
+        return failure;
     };
 }
 
 Parser p_and(const Parser &parser0, const Parser &parser1) {
-    return [parser0, parser1](FILE *input) {
+    return [parser0, parser1](FILE *input) -> ParseResult * {
         if (input == NULL) {
-            return ParseResult::failure;
+            return failure;
         }
 
-        ParseResult result0 = parser0(input);
-        if (!result0) { return ParseResult::failure; }
-        ParseResult result1 = parser1(input);
-        if (!result1) { return ParseResult::failure; }
-        return result0 + result1;
+        ParseResult *result0 = parser0(input);
+        if (!*result0) { return failure; }
+        ParseResult *result1 = parser1(input);
+        if (!*result1) { return failure; }
+        return new ListResult({result0, result1});
     };
 }
 
@@ -191,24 +205,24 @@ Parser p_and(const U &head, const T &... tail) {
     return p_and(head, p_and(tail...));
 }
 
-static std::string unique(const std::string &s) {
+static string unique(const string &s) {
     std::unordered_set<char> char_set;
     for (char c : s) {
         char_set.insert(c);
     }
-    std::string unique_s;
+    string unique_s;
     for (char c : char_set) {
         unique_s += c;
     }
     return unique_s;
 }
 
-Parser p_choose(const std::string &chars) {
+Parser p_choose(const string &chars) {
     if (chars.length() < 1) {
         return p_empty();
     }
 
-    std::string chars_set = unique(chars);
+    string chars_set = unique(chars);
     Parser res = p_lit(chars_set[0]);
     size_t len = chars_set.size();
     for (size_t i = 1; i < len; i++) {
@@ -220,11 +234,11 @@ Parser p_choose(const std::string &chars) {
 Parser p_between(const Parser &parser0,
                  const Parser &parser1,
                  const Parser &parser2) {
-    return [parser0, parser1, parser2](FILE *input) {
-        if (!parser0(input)) { return ParseResult::failure; }
-        ParseResult result = parser1(input);
-        if (!result) { return ParseResult::failure; }
-        if (!parser2(input)) { return ParseResult::failure; }
+    return [parser0, parser1, parser2](FILE *input) -> ParseResult * {
+        if (!*parser0(input)) { return failure; }
+        ParseResult *result = parser1(input);
+        if (!*result) { return failure; }
+        if (!*parser2(input)) { return failure; }
         return result;
     };
 }
@@ -232,34 +246,38 @@ Parser p_between(const Parser &parser0,
 /* TODO: Figure out how to duplicate logic with p_atleast and p_exactly. */
 
 Parser p_atleast(const Parser &parser, size_t n) {
-    return [parser, n](FILE *input) {
-        ParseResult acc, tempresult;
-        while ((tempresult = parser(input))) {
-            acc += tempresult;
+    return [parser, n](FILE *input) -> ParseResult * {
+        ListResult *acc = new ListResult();
+        ParseResult *tempresult;
+        while (*(tempresult = parser(input))) {
+            acc->push_back(tempresult);
         }
 
-        if (acc.result_length() >= n) {
+        if (acc->size() >= n) {
             return acc;
         }
         else {
-            return ParseResult::failure;
+            delete acc;
+            return failure;
         }
     };
 }
 
 Parser p_exactly(const Parser &parser, size_t n) {
-    return [parser, n](FILE *input) {
-        ParseResult acc, tempresult;
+    return [parser, n](FILE *input) -> ParseResult * {
+        ListResult *acc = new ListResult();
+        ParseResult *tempresult;
         size_t i = 0;
-        while (i++ < n && (tempresult = parser(input))) {
-            acc += tempresult;
+        while (i++ < n && *(tempresult = parser(input))) {
+            acc->push_back(tempresult);
         }
 
         if (i == n) {
             return acc;
         }
         else {
-            return ParseResult::failure;
+            delete acc;
+            return failure;
         }
     };
 }
@@ -276,15 +294,16 @@ Parser p_oneplus(const Parser &parser) {
     return p_atleast(parser, 1);
 }
 
-Parser p_satisfy(bool(*f)(char)) {
-    return [f](FILE *input) {
+template<typename T>
+Parser p_satisfy(bool(*f)(T)) {
+    return [f](FILE *input) -> ParseResult * {
         int result = fpeek(input);
         if (f(result)) {
             fgetc(input);
-            return ParseResult((char)result);
+            return new Result<T>((T)result);
         }
         else {
-            return ParseResult::failure;
+            return failure;
         }
     };
 }
@@ -326,8 +345,8 @@ Parser p_int() {
 
 Parser p_hexint() {
     return p_and(p_maybe(p_choose("+-")),
-                 p_lit("0"),
-                 p_or(p_lit("x"), p_lit("X")),
+                 p_lit('0'),
+                 p_or(p_lit('x'), p_lit('X')),
                  p_hexdigits());
 }
 

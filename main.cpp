@@ -1,5 +1,15 @@
 #include "parser.hpp"
 
+template <typename T>
+std::ostream& operator<< (std::ostream& out, const std::vector<T>& v) {
+    if ( !v.empty() ) {
+        out << '[';
+        std::copy (v.begin(), v.end(), std::ostream_iterator<T>(out, ", "));
+        out << "\b\b]";
+    }
+    return out;
+}
+
 int main() {
     // Parser parser = p_and(p_lit('a'), p_lit('b'));
 /*    Parser parser = p_or(
@@ -14,14 +24,14 @@ int main() {
     // Parser parser = p_oneplus(p_choose("abc"));
     // Parser parser = p_oneplus(p_lit("hello"));
     // Parser parser = p_exactly(p_between(p_lit('('), p_lower(), p_lit(')')), 2); 
-    Parser bc = p_and(p_lit('b'), p_lit('c'));
-    Parser parser = p_or(p_lit("hello"), bc);
+    // Parser bc = p_and(p_lit('b'), p_lit('c'));
+    // Parser parser = p_or(p_lit("hello"), bc);
     // Parser parser = p_or(p_and(p_lit("hello"), bc), p_lit("la"));
-    // Parser parser = p_hexint();
-    ParseResult result = parser(stdin);
-    std::cout << "success? " << result.success << std::endl;
-    if (result) {
-        std::cout << result << std::endl;
+    Parser parser = p_hexint();
+    const ParseResult *result = parser(stdin);
+    std::cout << "success? " << result->succeeded() << std::endl;
+    if (result->succeeded()) {
+        std::cout << *result << std::endl;
     }
     return 0;
 }
