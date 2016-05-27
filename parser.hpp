@@ -26,7 +26,10 @@ public:
         return success;
     }
 
-protected:
+    friend ostream &operator<<(ostream &output, const ParseResult &result) {
+        return result.print(output);
+    }
+
     virtual ostream &print(ostream& output) const = 0;
 
 private:
@@ -37,11 +40,6 @@ class ParseFailure : public ParseResult {
 public:
     ParseFailure() : ParseResult(false) {}
 
-    friend ostream &operator<<(ostream &output, const ParseFailure &result) {
-        return result.print(output);
-    }
-
-protected:
     ostream &print(ostream& output) const {
         output << "<ParseFailure>";
         return output;
@@ -55,11 +53,6 @@ class Result : public ParseResult {
 public:
     Result(T t) : result(t) {}
 
-    friend ostream &operator<<(ostream &output, const Result<T> &result) {
-        return result.print(output);
-    }
-
-protected:
     ostream& print(ostream& output) const {
         output << result;
         return output;
@@ -82,11 +75,6 @@ public:
         return result.size();
     }
 
-    friend ostream &operator<<(ostream &output, const ListResult &result) {
-       return result.print(output);
-    }
-
-protected:
     ostream& print(ostream& output) const {
         output << "[";
         for (size_t i = 0; i < result.size(); i++) {
