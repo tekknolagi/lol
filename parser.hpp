@@ -46,10 +46,6 @@ struct ParseResult {
         return this->result.size();
     }
 
-    bool is_empty() const {
-        return result_length() == 0;
-    }
-
     explicit operator bool() const {
         return success;
     }
@@ -170,36 +166,15 @@ Parser p_or(const Parser &parser0, const Parser &parser1) {
     };
 }
 
-/*
-template<typename T>
-Parser p_or(const T &parser) {
-    return parser;
-}
-
-template<typename U, typename... T>
-Parser p_or(const U &head, const T &... tail) {
-    return p_or(head, p_or(tail...));
-}
-*/
-
-/*
-static inline int goto_pos(FILE *fp, long pos) {
-    return fseek(fp, pos, SEEK_SET);
-}
-*/
-
 Parser p_and(const Parser &parser0, const Parser &parser1) {
     return [parser0, parser1](FILE *input) {
         if (input == NULL) {
             return ParseResult::failure;
         }
 
-        // long int pos = ftell(input);
         ParseResult result0 = parser0(input);
-        // if (!result0) { goto_pos(input, pos); return ParseResult::failure; }
         if (!result0) { return ParseResult::failure; }
         ParseResult result1 = parser1(input);
-        // if (!result1) { goto_pos(input, pos); return ParseResult::failure; }
         if (!result1) { return ParseResult::failure; }
         return result0 + result1;
     };
