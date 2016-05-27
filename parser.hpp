@@ -133,17 +133,18 @@ Parser p_lit(char c) {
     };
 }
 
-/* Forward declaration for use in string literal. May change string literal to 
- * return whole strings instead of many characters. */
-Parser p_and(const Parser &parser0, const Parser &parser1);
-
 Parser p_lit(const std::string &s) {
-    Parser res = p_empty();
-    size_t len = s.size();
-    for (size_t i = 0; i < len; i++) {
-        res = p_and(res, p_lit(s[i]));
-    }
-    return res;
+    return [s](FILE *input) {
+        std::string acc;
+        for (size_t i = 0; i < s.length(); i++) {
+            int c = fpeek(input);
+            if (c != s[i]) { return ParseResult::failure; }
+            fgetc(input);
+            acc += c;
+        }
+
+        return ParseResult(acc);
+    };
 }
 
 /* Works for both char and string. */
