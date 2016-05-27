@@ -118,10 +118,15 @@ Parser p_any() {
     };
 }
 
+int fpeek(FILE *input) {
+    int c = fgetc(input);
+    ungetc(c, input);
+    return c;
+}
+
 Parser p_lit(char c) {
     return [c](FILE *input) {
-        int result = fgetc(input);
-        ungetc(result, input);
+        int result = fpeek(input);
         if (result == c) {
             fgetc(input);
             return ParseResult(c);
@@ -165,9 +170,23 @@ Parser p_or(const Parser &parser0, const Parser &parser1) {
     };
 }
 
+/*
+template<typename T>
+Parser p_or(const T &parser) {
+    return parser;
+}
+
+template<typename U, typename... T>
+Parser p_or(const U &head, const T &... tail) {
+    return p_or(head, p_or(tail...));
+}
+*/
+
+/*
 static inline int goto_pos(FILE *fp, long pos) {
     return fseek(fp, pos, SEEK_SET);
 }
+*/
 
 Parser p_and(const Parser &parser0, const Parser &parser1) {
     return [parser0, parser1](FILE *input) {
@@ -175,13 +194,25 @@ Parser p_and(const Parser &parser0, const Parser &parser1) {
             return ParseResult::failure;
         }
 
-        long int pos = ftell(input);
+        // long int pos = ftell(input);
         ParseResult result0 = parser0(input);
-        if (!result0) { goto_pos(input, pos); return ParseResult::failure; }
+        // if (!result0) { goto_pos(input, pos); return ParseResult::failure; }
+        if (!result0) { return ParseResult::failure; }
         ParseResult result1 = parser1(input);
-        if (!result1) { goto_pos(input, pos); return ParseResult::failure; }
+        // if (!result1) { goto_pos(input, pos); return ParseResult::failure; }
+        if (!result1) { return ParseResult::failure; }
         return result0 + result1;
     };
+}
+
+template<typename T>
+Parser p_and(const T &parser) {
+    return parser;
+}
+
+template<typename U, typename... T>
+Parser p_and(const U &head, const T &... tail) {
+    return p_and(head, p_and(tail...));
 }
 
 static std::string unique(const std::string &s) {
@@ -257,12 +288,29 @@ Parser p_exactly(const Parser &parser, size_t n) {
     };
 }
 
+Parser p_maybe(const Parser &parser) {
+    return p_or(parser, p_empty());
+}
+
 Parser p_zeroplus(const Parser &parser) {
     return p_atleast(parser, 0);
 }
 
 Parser p_oneplus(const Parser &parser) {
     return p_atleast(parser, 1);
+}
+
+Parser p_satisfy(bool(*f)(char)) {
+    return [f](FILE *input) {
+        int result = fpeek(input);
+        if (f(result)) {
+            fgetc(input);
+            return ParseResult((char)result);
+        }
+        else {
+            return ParseResult::failure;
+        }
+    };
 }
 
 /* Pre-built sets. */
@@ -275,12 +323,44 @@ Parser p_digit() {
     return p_choose("0123456789");
 }
 
+Parser p_hexdigit() {
+    return p_choose("0123456789ABCDEFabcdef");
+}
+
+Parser p_digits() {
+    return p_oneplus(p_digit());
+}
+
+Parser p_hexdigits() {
+    return p_oneplus(p_hexdigit());
+}
+
+Parser p_int() {
+    return p_and(p_maybe(p_choose("+-")),
+                 p_digits());
+}
+
+Parser p_hexint() {
+    return p_and(p_maybe(p_choose("+-")),
+                 p_lit("0"),
+                 p_or(p_lit("x"), p_lit("X")),
+                 p_hexdigits());
+}
+
 Parser p_lower() {
     return p_choose("abcdefghijklmnopqrstuvwxyz");
 }
 
 Parser p_upper() {
     return p_choose("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+}
+
+Parser p_alpha() {
+    return p_or(p_lower(), p_upper());
+}
+
+Parser p_alphanum() {
+    return p_or(p_alpha(), p_digit());
 }
 
 #endif
