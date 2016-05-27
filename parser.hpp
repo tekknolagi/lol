@@ -130,6 +130,8 @@ Parser p_lit(char c) {
     };
 }
 
+/* Forward declaration for use in string literal. May change string literal to 
+ * return whole strings instead of many characters. */
 Parser p_and(const Parser &parser0, const Parser &parser1);
 
 Parser p_lit(const std::string &s) {
@@ -141,6 +143,7 @@ Parser p_lit(const std::string &s) {
     return res;
 }
 
+/* Works for both char and string. */
 template<typename T>
 Parser p_chomp(const T &t) {
     return [t](FILE *input) {
@@ -181,11 +184,11 @@ Parser p_and(const Parser &parser0, const Parser &parser1) {
 
 static std::string unique(const std::string &s) {
     std::unordered_set<char> char_set;
-    for (const char c : s) {
+    for (char c : s) {
         char_set.insert(c);
     }
     std::string unique_s;
-    for (const char c : char_set) {
+    for (char c : char_set) {
         unique_s += c;
     }
     return unique_s;
@@ -205,22 +208,6 @@ Parser p_choose(const std::string &chars) {
     return res;
 }
 
-Parser p_whitespace() {
-    return p_choose(" \t\n");
-}
-
-Parser p_digit() {
-    return p_choose("0123456789");
-}
-
-Parser p_lower() {
-    return p_choose("abcdefghijklmnopqrstuvwxyz");
-}
-
-Parser p_upper() {
-    return p_choose("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-}
-
 Parser p_between(const Parser &parser0,
                  const Parser &parser1,
                  const Parser &parser2) {
@@ -232,6 +219,8 @@ Parser p_between(const Parser &parser0,
         return result;
     };
 }
+
+/* TODO: Figure out how to duplicate logic with p_atleast and p_exactly. */
 
 Parser p_atleast(const Parser &parser, size_t n) {
     return [parser, n](FILE *input) {
@@ -273,16 +262,22 @@ Parser p_oneplus(const Parser &parser) {
     return p_atleast(parser, 1);
 }
 
-/*
-template<typename T>
-Parser p_apply(const std::function<T (const ParseResult &)> &f,
-               const Parser &parser) {
-    return [&f, &parser](FILE *input) {
-        ParseResult result = parser(input);
-        if (!result) { return ParseResult::failure; }
-        else { return f(result); }
-    };
+/* Pre-built sets. */
+
+Parser p_whitespace() {
+    return p_choose(" \t\n");
 }
-*/
+
+Parser p_digit() {
+    return p_choose("0123456789");
+}
+
+Parser p_lower() {
+    return p_choose("abcdefghijklmnopqrstuvwxyz");
+}
+
+Parser p_upper() {
+    return p_choose("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+}
 
 #endif
