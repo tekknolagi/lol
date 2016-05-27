@@ -38,16 +38,16 @@ struct ParseResult {
         this->success = true;
     }
 
+    ParseResult(bool success) {
+        this->success = success;
+    }
+
     size_t result_length() const {
         return this->result.size();
     }
 
     bool is_empty() const {
         return result_length() == 0;
-    }
-
-    ParseResult(bool success) {
-        this->success = success;
     }
 
     explicit operator bool() const {
@@ -98,6 +98,14 @@ const ParseResult ParseResult::failure = ParseResult(false);
 
 typedef std::function<ParseResult (FILE *)> Parser;
 
+/* Parser functions. */
+
+Parser p_empty() {
+    return [](FILE *input) {
+        return ParseResult();
+    };
+}
+
 Parser p_any() {
     return [](FILE *input) {
         int result = fgetc(input);
@@ -107,12 +115,6 @@ Parser p_any() {
         else {
             return ParseResult((char)result);
         }
-    };
-}
-
-Parser p_empty() {
-    return [](FILE *input) {
-        return ParseResult();
     };
 }
 
