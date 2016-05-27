@@ -243,11 +243,12 @@ Parser p_atleast(const Parser &parser, size_t n) {
 Parser p_exactly(const Parser &parser, size_t n) {
     return [parser, n](FILE *input) {
         ParseResult acc, tempresult;
-        while ((tempresult = parser(input))) {
+        size_t i = 0;
+        while (i++ < n && (tempresult = parser(input))) {
             acc += tempresult;
         }
 
-        if (acc.result_length() == n) {
+        if (i == n) {
             return acc;
         }
         else {
