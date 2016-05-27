@@ -289,6 +289,14 @@ Parser p_satisfy(bool(*f)(char)) {
     };
 }
 
+typedef std::function<void *(void *)> p_apply_func;
+
+/* result should be tagged union */
+/* return array or single thing or failure */
+/* result should....... */
+// Parser p_apply(const Parser &parser, const p_apply_func &f) {
+// };
+
 /* Pre-built sets. */
 
 Parser p_whitespace() {
