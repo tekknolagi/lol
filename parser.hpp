@@ -13,6 +13,24 @@ using std::vector;
 using std::ostream;
 using std::cout;
 
+/*
+template<typename T>
+void append(std::vector<T> &dst, const std::vector<T> &src) {
+    dst.insert(dst.end(), src.begin(), src.end());
+}
+
+template<typename T>
+void append(std::vector<T> &dst, const T &src) {
+    dst.push_back(src);
+}
+*/
+
+/* Result < Atom
+   Atom < String
+   Atom < Char
+   Result < List<Atom>
+   */
+
 class ParseResult {
 public:
     ParseResult() : success(true) {}
@@ -26,10 +44,20 @@ public:
         return success;
     }
 
+    friend ostream &operator<<(ostream &output, const ParseResult *result) {
+        return result->print(output);
+    }
+
     friend ostream &operator<<(ostream &output, const ParseResult &result) {
         return result.print(output);
     }
 
+    ParseResult *operator|(ParseResult &b) {
+        return union_(&b);
+    }
+
+    virtual bool is_empty() const = 0;
+    virtual ParseResult *union_(ParseResult *other) const = 0;
     virtual ostream &print(ostream& output) const = 0;
 
 private:
@@ -40,6 +68,15 @@ class ParseFailure : public ParseResult {
 public:
     ParseFailure() : ParseResult(false) {}
 
+    bool is_empty() const {
+        return true;
+    }
+
+    ParseResult *union_(ParseResult *other) const {
+        (void)other;
+        return new ParseFailure();
+    }
+
     ostream &print(ostream& output) const {
         output << "<ParseFailure>";
         return output;
@@ -48,24 +85,35 @@ public:
 
 ParseFailure *failure = new ParseFailure();
 
-template<typename T>
-class Result : public ParseResult {
-public:
-    Result(T t) : result(t) {}
-
-    ostream& print(ostream& output) const {
-        output << result;
-        return output;
-    }
-
-private:
-    T result;
-};
-
 class ListResult : public ParseResult {
 public:
     ListResult() {}
     ListResult(std::initializer_list<ParseResult *> ls) : result(ls) {}
+    ListResult(std::vector<ParseResult *> ls) : result(ls) {}
+
+    bool is_empty() const {
+        return result.size() == 0;
+    }
+
+    ParseResult *union_(ParseResult *other) const {
+        ListResult *lr = dynamic_cast<ListResult *>(other);
+        if (lr == NULL) {
+            ListResult *copy = new ListResult(result);
+            copy->push_back(other);
+            return copy;
+        }
+        else {
+            vector<ParseResult *> result_copy = result;
+            for (const auto &el : lr->result) {
+                result_copy.push_back(el);
+            }
+            return new ListResult(result_copy);
+        }
+    }
+
+    const vector<ParseResult *> &get_result() const {
+        return result;
+    }
 
     void push_back(ParseResult *pr) {
         result.push_back(pr);
@@ -88,11 +136,55 @@ public:
     }
 
 private:
-    std::vector<ParseResult *> result;
+    vector<ParseResult *> result;
 };
+
+template<typename T>
+class Result : public ParseResult {
+public:
+    Result(T t) : result(t) {}
+
+    bool is_empty() const;
+
+    ParseResult *union_(ParseResult *other) const {
+        ListResult *lr = dynamic_cast<ListResult *>(other);
+        Result<T> *this_copy = new Result<T>(result);
+        if (lr == NULL) {
+            return new ListResult({this_copy, other});
+        }
+        else {
+            vector<ParseResult *> result_copy;
+            result_copy.push_back(this_copy);
+            for (const auto &el : lr->get_result()) {
+                result_copy.push_back(el);
+            }
+            return new ListResult(result_copy);
+        }
+    }
+
+    ostream& print(ostream& output) const {
+        output << result;
+        return output;
+    }
+
+private:
+    T result;
+};
+
+Result<char> *empty = new Result<char>((char)0);
 
 typedef Result<char> CharResult;
 typedef Result<string> StringResult;
+
+template<>
+bool CharResult::is_empty() const {
+    return result == 0;
+}
+
+template<>
+bool StringResult::is_empty() const {
+    return result == "";
+}
 
 typedef std::function<ParseResult *(FILE *)> Parser;
 
@@ -100,7 +192,7 @@ typedef std::function<ParseResult *(FILE *)> Parser;
 
 Parser p_empty() {
     return [](FILE *input) -> ParseResult * {
-        return new StringResult("");
+        return empty;
     };
 }
 
@@ -151,13 +243,21 @@ Parser p_lit(const string &s) {
 
 /* Works for both char and string. */
 /*template<typename T>
-Parser p_chomp(const T &t) {
+Parser p_chomp(T &t) {
     return [t](FILE *input) {
-        ParseResult result = p_lit(t);
-        if (!result) { return failure; }
-        return new T();
+        ParseResult *result = p_lit(t);
+        if (!*result) { return failure; }
+        return new Result<T>();
     };
 }*/
+
+Parser p_chomp(const Parser &parser) {
+    return [parser](FILE *input) -> ParseResult * {
+        ParseResult *result = parser(input);
+        if (!*result) { return failure; }
+        return empty;
+    };
+}
 
 Parser p_or(const Parser &parser0, const Parser &parser1) {
     return [parser0, parser1](FILE *input) -> ParseResult * {
@@ -179,7 +279,18 @@ Parser p_and(const Parser &parser0, const Parser &parser1) {
         if (!*result0) { return failure; }
         ParseResult *result1 = parser1(input);
         if (!*result1) { return failure; }
-        return new ListResult({result0, result1});
+        if (result0->is_empty() && result1->is_empty()) {
+            return result0;
+        }
+        else if (result0->is_empty()) {
+            return result1;
+        }
+        else if (result1->is_empty()) {
+            return result0;
+        }
+        else {
+            return *result0 | *result1;
+        }
     };
 }
 
@@ -329,6 +440,14 @@ Parser p_hexdigits() {
 Parser p_int() {
     return p_and(p_maybe(p_choose("+-")),
                  p_digits());
+}
+
+Parser p_group(const Parser &parser) {
+    return [parser](FILE *input) -> ParseResult * {
+        ParseResult *result = parser(input);
+        if (!*result) { return failure; }
+        return new ListResult({result});
+    };
 }
 
 Parser p_hexint() {

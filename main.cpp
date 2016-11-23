@@ -2,7 +2,7 @@
 
 int main() {
     // Parser parser = p_and(p_lit('a'), p_lit('b'));
-/*    Parser parser = p_or(
+    /* Parser parser = p_or(
             p_and(p_lit('a'), p_lit('b')),
             p_and(p_lit('c'), p_lit('d'))
         );
@@ -17,9 +17,11 @@ int main() {
     // Parser bc = p_and(p_lit('b'), p_lit('c'));
     // Parser parser = p_or(p_lit("hello"), bc);
     // Parser parser = p_or(p_and(p_lit("hello"), bc), p_lit("la"));
-    Parser parser = p_hexint();
+    Parser parser = p_and(p_lit("hello"),
+                          p_chomp(p_whitespace()),
+                          p_group(p_hexint()));
     ParseResult *result = parser(stdin);
     std::cout << "success? " << result->succeeded() << std::endl;
-    std::cout << *result << std::endl;
+    std::cout << result << std::endl;
     return 0;
 }
